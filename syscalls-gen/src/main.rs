@@ -17,52 +17,62 @@ static LINUX_VERSION: &str = "v5.13-rc1";
 lazy_static! {
     /// List of syscall tables for each architecture.
     static ref SOURCES: Vec<Source<'static>> = vec![
-        Source {
+        Source::Table {
             arch: "x86",
             path: "arch/x86/entry/syscalls/syscall_32.tbl",
             abi: vec!["i386"],
         },
-        Source {
+        Source::Table {
             arch: "x86_64",
             path: "arch/x86/entry/syscalls/syscall_64.tbl",
             abi: vec!["common", "64"],
         },
-        Source {
+        Source::Table {
             arch: "arm",
             path: "arch/arm/tools/syscall.tbl",
             abi: vec!["common"],
         },
-        Source {
+        // NOTE: arm64/aarch64 is a little different from all the other tables.
+        // These are defined in `unistd.h`, which is supposed to be the method
+        // used for all new architectures going forward.
+        Source::Header{
+            arch: "aarch64",
+            headers: &[
+                "include/uapi/asm-generic/unistd.h",
+                "linux/arch/arm64/include/asm/unistd.h",
+            ],
+        },
+        urce::Table {
             arch: "sparc",
             path: "arch/sparc/kernel/syscalls/syscall.tbl",
             abi: vec!["common", "32"],
         },
-        Source {
+        Source::Table {
             arch: "sparc64",
             path: "arch/sparc/kernel/syscalls/syscall.tbl",
             abi: vec!["common", "64"],
         },
-        Source {
+        Source::Table {
             arch: "powerpc",
             path: "arch/powerpc/kernel/syscalls/syscall.tbl",
             abi: vec!["common", "nospu", "32"],
         },
-        Source {
+        Source::Table {
             arch: "powerpc64",
             path: "arch/powerpc/kernel/syscalls/syscall.tbl",
             abi: vec!["common", "nospu", "64"],
         },
-        Source {
+        Source::Table {
             arch: "mips",
             path: "arch/mips/kernel/syscalls/syscall_o32.tbl",
             abi: vec!["o32"],
         },
-        Source {
+        Source::Table {
             arch: "mips64",
             path: "arch/mips/kernel/syscalls/syscall_n64.tbl",
             abi: vec!["n64"],
         },
-        Source {
+        Source::Table {
             arch: "s390x",
             path: "arch/s390/kernel/syscalls/syscall.tbl",
             abi: vec!["common", "64"],
@@ -76,6 +86,20 @@ mod syscalls;
 
 pub use self::syscalls::*;
 "#;
+
+enum Source<'a> {
+    /// The definitions are in a `syscall.tbl` file.
+    Table {
+        arch: &'a str,
+        path: &'a str,
+        abi: Vec<&'a str>,
+    }
+    /// The definitions are in a unistd.h header file.
+    Header {
+        arch: &'a str,
+        headers: &'a [&'a str],
+    }
+}
 
 struct Source<'a> {
     arch: &'a str,
@@ -106,6 +130,13 @@ impl TableEntry {
 }
 
 impl<'a> Source<'a> {
+    pub fn arch(&self) -> &'a str {
+        match self {
+            Self::Table { arch, .. } => arch,
+            Self::Header { arch, .. } => arch,
+        }
+    }
+
     async fn fetch_table(&self) -> Result<Vec<TableEntry>> {
         let contents = fetch_path(self.path).await?;
 
@@ -160,9 +191,9 @@ impl<'a> Source<'a> {
         let table = self
             .fetch_table()
             .await
-            .wrap_err_with(|| eyre!("Failed fetching table {:?}", self.path))?;
+            .wrap_err_with(|| eyre!("Failed fetching table for {}", self.arch()))?;
 
-        let dir = dir.join(format!("src/arch/{}", self.arch));
+        let dir = dir.join(format!("src/arch/{}", self.arch()));
 
         fs::create_dir_all(&dir)
             .wrap_err_with(|| eyre!("Failed to create directory {:?}", dir))?;
@@ -172,7 +203,7 @@ impl<'a> Source<'a> {
 
         let mut file = fs::File::create(&module)
             .wrap_err_with(|| eyre!("Failed to create file {:?}", module))?;
-        writeln!(file, "//! Syscalls for the {} architecture.", self.arch)?;
+        writeln!(file, "//! Syscalls for the {} architecture.", self.arch())?;
         file.write_all(ARCH_MOD.as_bytes())?;
 
         // Generate `src/{arch}/syscalls.rs`
@@ -180,10 +211,10 @@ impl<'a> Source<'a> {
 
         let mut file = fs::File::create(&syscalls)
             .wrap_err_with(|| eyre!("Failed to create file {:?}", syscalls))?;
-        writeln!(file, "//! Syscalls for the {} architecture.\n", self.arch)?;
+        writeln!(file, "//! Syscalls for the {} architecture.\n", self.arch())?;
         write!(file, "{}", SyscallFile(&table))?;
 
-        Ok((self.arch, dir))
+        Ok((self.arch(), dir))
     }
 }
 
