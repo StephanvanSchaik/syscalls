@@ -3,6 +3,7 @@ use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use lazy_static::lazy_static;
@@ -17,66 +18,66 @@ static LINUX_VERSION: &str = "v5.13-rc1";
 lazy_static! {
     /// List of syscall tables for each architecture.
     static ref SOURCES: Vec<Source<'static>> = vec![
-        Source::Table {
+        Source::Table(Table {
             arch: "x86",
             path: "arch/x86/entry/syscalls/syscall_32.tbl",
-            abi: vec!["i386"],
-        },
-        Source::Table {
+            abi: &["i386"],
+        }),
+        Source::Table(Table {
             arch: "x86_64",
             path: "arch/x86/entry/syscalls/syscall_64.tbl",
-            abi: vec!["common", "64"],
-        },
-        Source::Table {
+            abi: &["common", "64"],
+        }),
+        Source::Table(Table {
             arch: "arm",
             path: "arch/arm/tools/syscall.tbl",
-            abi: vec!["common"],
-        },
+            abi: &["common"],
+        }),
         // NOTE: arm64/aarch64 is a little different from all the other tables.
         // These are defined in `unistd.h`, which is supposed to be the method
         // used for all new architectures going forward.
-        Source::Header{
+        Source::Header(Header {
             arch: "aarch64",
             headers: &[
                 "include/uapi/asm-generic/unistd.h",
                 "linux/arch/arm64/include/asm/unistd.h",
             ],
-        },
-        urce::Table {
+        }),
+        Source::Table(Table {
             arch: "sparc",
             path: "arch/sparc/kernel/syscalls/syscall.tbl",
-            abi: vec!["common", "32"],
-        },
-        Source::Table {
+            abi: &["common", "32"],
+        }),
+        Source::Table(Table {
             arch: "sparc64",
             path: "arch/sparc/kernel/syscalls/syscall.tbl",
-            abi: vec!["common", "64"],
-        },
-        Source::Table {
+            abi: &["common", "64"],
+        }),
+        Source::Table(Table {
             arch: "powerpc",
             path: "arch/powerpc/kernel/syscalls/syscall.tbl",
-            abi: vec!["common", "nospu", "32"],
-        },
-        Source::Table {
+            abi: &["common", "nospu", "32"],
+        }),
+        Source::Table(Table {
             arch: "powerpc64",
             path: "arch/powerpc/kernel/syscalls/syscall.tbl",
-            abi: vec!["common", "nospu", "64"],
-        },
-        Source::Table {
+            abi: &["common", "nospu", "64"],
+        }),
+        Source::Table(Table {
             arch: "mips",
             path: "arch/mips/kernel/syscalls/syscall_o32.tbl",
-            abi: vec!["o32"],
-        },
-        Source::Table {
+            abi: &["o32"],
+        }),
+        Source::Table(Table {
             arch: "mips64",
             path: "arch/mips/kernel/syscalls/syscall_n64.tbl",
-            abi: vec!["n64"],
-        },
-        Source::Table {
+            abi: &["n64"],
+        }),
+        Source::Table(Table {
             arch: "s390x",
             path: "arch/s390/kernel/syscalls/syscall.tbl",
-            abi: vec!["common", "64"],
-        },
+            abi: &["common", "64"],
+        }),
     ];
 }
 
@@ -87,24 +88,22 @@ mod syscalls;
 pub use self::syscalls::*;
 "#;
 
-enum Source<'a> {
-    /// The definitions are in a `syscall.tbl` file.
-    Table {
-        arch: &'a str,
-        path: &'a str,
-        abi: Vec<&'a str>,
-    }
-    /// The definitions are in a unistd.h header file.
-    Header {
-        arch: &'a str,
-        headers: &'a [&'a str],
-    }
-}
-
-struct Source<'a> {
+struct Table<'a> {
     arch: &'a str,
     path: &'a str,
-    abi: Vec<&'a str>,
+    abi: &'a [&'a str],
+}
+
+struct Header<'a> {
+    arch: &'a str,
+    headers: &'a [&'a str],
+}
+
+enum Source<'a> {
+    /// The definitions are in a `syscall.tbl` file.
+    Table(Table<'a>),
+    /// The definitions are in a unistd.h header file.
+    Header(Header<'a>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -129,14 +128,7 @@ impl TableEntry {
     }
 }
 
-impl<'a> Source<'a> {
-    pub fn arch(&self) -> &'a str {
-        match self {
-            Self::Table { arch, .. } => arch,
-            Self::Header { arch, .. } => arch,
-        }
-    }
-
+impl<'a> Table<'a> {
     async fn fetch_table(&self) -> Result<Vec<TableEntry>> {
         let contents = fetch_path(self.path).await?;
 
@@ -184,6 +176,96 @@ impl<'a> Source<'a> {
         table.sort();
 
         Ok(table)
+    }
+}
+
+impl<'a> Header<'a> {
+    async fn fetch_table(&self) -> Result<Vec<TableEntry>> {
+        lazy_static! {
+            // Pattern for matching the syscall definition.
+            static ref RE_SYSCALLNR: Regex = Regex::new(r"^#define\s+__NR_([a-z0-9_]+)\s+(\d+)").unwrap();
+        }
+
+        let table = Vec::new();
+
+        for header in self.headers {
+            let contents = fetch_path(header).await?;
+
+            for line in contents.lines() {
+                let _line = line.trim();
+            }
+        }
+
+        Ok(table)
+    }
+}
+
+fn preprocess(path: &Path, defines: &[&str]) -> HashMap<String, Option<String>> {
+    use std::process::{Stdio, Command};
+    use std::io::{BufRead, BufReader};
+
+    let mut map = HashMap::new();
+
+    let mut child = Command::new("cpp")
+        .args(["-w", "-dM"])
+        .args(defines.iter().map(|def| format!("-D{}", def)))
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+
+    if let Some(stdout) = child.stdout.take().map(BufReader::new) {
+        for line in stdout.lines() {
+            if let Ok(line) = line {
+                if let Some(def) = line.strip_prefix("#define ") {
+                    if let Some((first, second)) = def.split_once(" ") {
+                        map.insert(first.to_owned(), Some(second.to_owned()));
+                    } else {
+                        map.insert(def.to_owned(), None);
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = child.wait();
+
+    map
+}
+
+/// Tries to resolve all preprocessor definitions to their fundamental
+/// definition. Returns a new table with re-mapped definitions.
+fn resolve_definitions(map: &HashMap<String, Option<String>>) -> HashMap<&str, Option<&str>> {
+    let mut new_map = HashMap::new();
+
+    // Do a depth-first search on each item until we've iterated over the
+    // entire table. `new_map` doubles as cache of visited items.
+    let mut stack: Vec<_> = map.keys().map(|k| k.as_str()).collect();
+
+    while let Some(key) = stack.pop() {
+        if new_map.contains_key(key) {
+            continue;
+        }
+    }
+
+    new_map
+}
+
+impl<'a> Source<'a> {
+    pub fn arch(&self) -> &'a str {
+        match self {
+            Self::Table(table) => table.arch,
+            Self::Header(header) => header.arch,
+        }
+    }
+
+    async fn fetch_table(&self) -> Result<Vec<TableEntry>> {
+        match self {
+            Self::Table(table) => table.fetch_table().await,
+            Self::Header(header) => header.fetch_table().await,
+        }
     }
 
     /// Generates the source file.
