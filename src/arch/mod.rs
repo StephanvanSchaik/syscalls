@@ -51,3 +51,9 @@ pub use x86::*;
 
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::*;
+
+#[derive(Clone, Debug)]
+pub struct Argument {
+    ty: String,
+    name: String,
+}
