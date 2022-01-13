@@ -8,17 +8,17 @@ use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Clone, Debug)]
-struct Argument {
-    ty: String,
-    name: String,
+pub struct Argument {
+    pub ty: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug)]
-struct SystemCall {
-    arguments: Vec<Argument>,
+pub struct SystemCall {
+    pub arguments: Vec<Argument>,
 }
 
-fn parse_definitions<P>(root: P) -> Result<HashMap<String, SystemCall>>
+pub fn parse_definitions<P>(root: P) -> Result<HashMap<String, SystemCall>>
 where
     P: AsRef<Path>,
 {

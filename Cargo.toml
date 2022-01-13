@@ -19,6 +19,7 @@ std = []
 with-serde = ["serde", "serde_repr"]
 
 [dependencies]
+lazy_static = "1"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_repr = { version = "0.1", optional = true }
 paste = "1"
