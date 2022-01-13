@@ -57,3 +57,13 @@ pub struct Argument {
     ty: String,
     name: String,
 }
+
+impl Argument {
+    pub fn ty(&self) -> &str {
+        &self.ty
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
