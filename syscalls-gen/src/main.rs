@@ -1,3 +1,5 @@
+mod definitions;
+
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
