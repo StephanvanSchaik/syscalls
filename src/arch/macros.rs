@@ -98,6 +98,11 @@ macro_rules! syscall_enum {
             pub fn iter() -> impl Iterator<Item = Self> {
                 core::iter::successors(Some(Self::first()), |x| x.next())
             }
+
+            /// Returns the arguments of a given system call.
+            pub fn arguments(&self) -> Option<&Vec<Argument>> {
+                DEFINITIONS.get(self)
+            }
         }
 
         impl core::str::FromStr for $Name {
