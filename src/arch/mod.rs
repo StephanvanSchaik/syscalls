@@ -53,17 +53,17 @@ pub use x86::*;
 pub use x86_64::*;
 
 #[derive(Clone, Debug)]
-pub struct Argument {
-    ty: String,
-    name: String,
+pub struct Argument<'a> {
+    ty: &'a str,
+    name: &'a str,
 }
 
-impl Argument {
+impl Argument<'_> {
     pub fn ty(&self) -> &str {
-        &self.ty
+        self.ty
     }
 
     pub fn name(&self) -> &str {
-        &self.name
+        self.name
     }
 }

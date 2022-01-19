@@ -100,8 +100,8 @@ macro_rules! syscall_enum {
             }
 
             /// Returns the arguments of a given system call.
-            pub fn arguments(&self) -> Option<&Vec<Argument>> {
-                DEFINITIONS.get(self)
+            pub fn arguments(&self) -> &'static [Argument<'static>] {
+                lookup_definition(*self)
             }
         }
 
